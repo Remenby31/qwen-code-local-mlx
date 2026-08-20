@@ -72,8 +72,8 @@ Decode speed is not what you feel, though. End to end through the Qwen Code CLI,
 
 | | wall clock |
 |---|---|
-| first turn of a session (cold prefix cache) | 177 s |
-| second turn, same project (warm) | **44 s** |
+| first `qw` of the session — server start, model load, cold turn | 181 s |
+| every turn after that (warm prefix cache) | **44 s** |
 
 Prefill of the CLI's ~20k-token system prompt dominates everything else, which is why the
 prefix cache matters more than any decoding knob — and why one-shot `-p` invocations feel
