@@ -8,15 +8,20 @@ entry costs real time to rediscover.
 The most expensive mistake available here. A coding CLI resends its whole system prompt
 (~20k tokens for Qwen Code) every single turn, so what you feel is prefill, not tok/s.
 
-Measured on the same task, the same model, two drafters:
+Measured on the same one-line edit task ("fix this function, then tell me what you
+changed"), same model, same machine:
 
-| | decode | wall clock, one trivial edit task |
+| | decode | wall clock |
 |---|---|---|
 | prefix cache **off** | 37.9 tok/s | **658 s** |
-| prefix cache **on** | 31.0 tok/s | **57 s** |
+| prefix cache **on**, cold (first turn of a session) | 40.6 tok/s | 177 s |
+| prefix cache **on**, warm (second turn, same project) | 40.6 tok/s | **44 s** |
 
-The faster decoder was 11× slower end to end. Always confirm the cache is live before
-tuning anything else:
+The uncached run decoded *faster* and finished 15× slower. Note also that the win only
+lands from the second turn: the first turn of any session pays full prefill, so short
+one-shot invocations never see it — keep a session open.
+
+Always confirm the cache is live before tuning anything else:
 
 ```bash
 curl -s localhost:8080/metrics | python3 -c 'import sys,json;print(json.load(sys.stdin)["prefix_cache"])'

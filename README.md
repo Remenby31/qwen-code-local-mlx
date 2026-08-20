@@ -43,6 +43,19 @@ greedy, 512 tokens. Reproduce with `scripts/benchmark.sh`.
 
 Sampled (temperature 1.0 / top-p 0.95 / top-k 20) instead of greedy: ~24 tok/s.
 
+Decode speed is not what you feel, though. End to end through the Qwen Code CLI, on a
+"find the bug in this function, fix it with the edit tool, tell me what you changed" task:
+
+| | wall clock |
+|---|---|
+| first turn of a session (cold prefix cache) | 177 s |
+| second turn, same project (warm) | **44 s** |
+
+Prefill of the CLI's ~20k-token system prompt dominates everything else, which is why the
+prefix cache matters more than any decoding knob — and why one-shot `-p` invocations feel
+much worse than a session you keep open. See
+[pitfalls #1](docs/pitfalls.md#1-on-agent-workloads-prefill-dominates--not-decode-throughput).
+
 Your ratio will differ. It is measured against *your* baseline, so a faster machine
 usually shows a *smaller* multiple — see
 [pitfalls #8](docs/pitfalls.md#8-ratios-flatter-the-slower-baseline).
