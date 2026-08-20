@@ -1,0 +1,118 @@
+#!/usr/bin/env bash
+# qw — one command for local Qwen. Starts the server if it isn't up, then hands you
+# the Qwen Code CLI. You never manage the server by hand.
+#
+#   qw [args…]   run the CLI here (starting the server first if needed)
+#   qw stop      stop the server and free its memory
+#   qw status    is it up, what is it holding, is the cache warm
+#   qw restart   stop, then start and wait until ready
+#   qw logs      tail the server log
+#
+# Why there is no idle auto-stop: the prefix cache lives in RAM and is lost on exit
+# (its SSD spill is a RAM-overflow valve, not persistence). A stop/start cycle costs
+# ~1 min of load plus a cold first turn — about 3 minutes of real time. Stopping is
+# therefore a decision you make, not a timer.
+set -euo pipefail
+
+PORT="${QWEN38_PORT:-8080}"
+MODEL_ID="${QWEN38_MODEL_ID:-Qwen3.8-27B-4bit}"
+SERVE="${QWEN38_SERVE:-$(dirname "$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")")/qwen38-serve}"
+LOG="${QWEN38_LOG:-${TMPDIR:-/tmp}/qwen38-serve.log}"
+BOOT_TIMEOUT="${QWEN38_BOOT_TIMEOUT:-300}"
+
+command -v "$SERVE" >/dev/null 2>&1 || [[ -x "$SERVE" ]] || SERVE="qwen38-serve"
+
+api()      { curl -fsS --max-time "${1:-3}" "http://127.0.0.1:$PORT/${2:-v1/models}" 2>/dev/null; }
+is_up()    { api 3 v1/models >/dev/null 2>&1; }
+# `|| true`: pgrep exits 1 when nothing matches, and under `set -e` + pipefail that
+# would abort the script on the entirely normal "server is not running" case.
+server_pid() { pgrep -f "mlx-dspark serve" 2>/dev/null | head -1 || true; }
+
+# Real memory: RSS reports ~0.3 GB for a 23 GB process because MLX allocates Metal
+# buffers that RSS does not count. footprint is the only honest source.
+footprint_gb() {
+  local pid="$1" out
+  out=$(footprint -p "$pid" 2>/dev/null | awk '/phys_footprint:/ {print $2, $3; exit}') || true
+  [[ -n "$out" ]] && echo "$out" || echo "?"
+}
+
+start() {
+  if is_up; then return 0; fi
+  if [[ -n "$(server_pid)" ]]; then
+    echo "qw: a server process exists but is not answering on :$PORT — waiting" >&2
+  else
+    echo "qw: starting server (first run of the session loads ~23 GB, about a minute)" >&2
+    nohup "$SERVE" >"$LOG" 2>&1 &
+  fi
+
+  local waited=0
+  while ! is_up; do
+    if grep -qiE "Traceback|error:|Address already in use" "$LOG" 2>/dev/null; then
+      echo "qw: server failed to start — last lines of $LOG:" >&2
+      tail -15 "$LOG" >&2
+      exit 1
+    fi
+    (( waited >= BOOT_TIMEOUT )) && { echo "qw: server not ready after ${BOOT_TIMEOUT}s (see $LOG)" >&2; exit 1; }
+    sleep 2; waited=$(( waited + 2 ))
+    (( waited % 20 == 0 )) && echo "qw: still loading… ${waited}s" >&2
+  done
+  echo "qw: ready on :$PORT" >&2
+}
+
+case "${1:-}" in
+  stop)
+    pid=$(server_pid)
+    [[ -z "$pid" ]] && { echo "qw: not running"; exit 0; }
+    echo "qw: stopping $pid (freeing $(footprint_gb "$pid"); the warm prefix cache is lost)"
+    kill "$pid" 2>/dev/null || true
+    for _ in $(seq 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.5; done
+    kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null || true
+    echo "qw: stopped"
+    ;;
+  status)
+    pid=$(server_pid)
+    if [[ -z "$pid" ]] || ! is_up; then
+      echo "server   : not running${pid:+ (stale pid $pid, not answering)}"
+      exit 0
+    fi
+    echo "server   : up on :$PORT (pid $pid), holding $(footprint_gb "$pid")"
+    QW_MODELS="$(api 3 v1/models)" QW_METRICS="$(api 3 metrics)" python3 - <<'PY'
+import json, os
+
+def load(name):
+    try:
+        return json.loads(os.environ.get(name) or "")
+    except ValueError:
+        return None
+
+m = load("QW_MODELS")
+if m:
+    d = m["data"][0]
+    x = d.get("x_mlx_dspark", {})
+    print(f"model    : {d['id']}")
+    print(f"mode     : {x.get('mode', '?')}  (drafter: {x.get('drafter', 'none')})")
+
+t = load("QW_METRICS")
+if t:
+    p = t.get("prefix_cache", {})
+    if not p.get("enabled"):
+        print("cache    : OFF — every turn re-prefills the whole prompt")
+    else:
+        hits = p.get("hits", 0)
+        state = "warm" if hits else "cold (the next turn pays a full prefill)"
+        print(f"cache    : on, {state} — {hits} hits, {p.get('reused_tokens', 0):,} tokens reused")
+    reqs = t.get("requests", 0)
+    if reqs:
+        print(f"accept   : {t.get('mean_accept_len', 0):.2f} tokens/round over {reqs} requests")
+PY
+    ;;
+  restart) "$0" stop; start ;;
+  logs)    tail -f "$LOG" ;;
+  -h|--help|help)
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+    ;;
+  *)
+    start
+    exec qwen --model "$MODEL_ID" "$@"
+    ;;
+esac

@@ -55,8 +55,11 @@ if command -v qwen >/dev/null; then echo "already present: $(qwen --version)"
 else npm install -g @qwen-code/qwen-code && echo "installed: $(qwen --version)"; fi
 
 # --- launcher + config -------------------------------------------------------
-say "Launcher -> $BIN_DIR/qwen38-serve"
-mkdir -p "$BIN_DIR" && install -m 0755 "$REPO_DIR/bin/qwen38-serve" "$BIN_DIR/qwen38-serve"
+say "Commands -> $BIN_DIR"
+mkdir -p "$BIN_DIR"
+install -m 0755 "$REPO_DIR/bin/qwen38-serve" "$BIN_DIR/qwen38-serve"   # the server itself
+install -m 0755 "$REPO_DIR/bin/qw"           "$BIN_DIR/qw"             # what you actually type
+echo "qw, qwen38-serve"
 case ":$PATH:" in *":$BIN_DIR:"*) ;; *) echo "note: add $BIN_DIR to your PATH." ;; esac
 
 say "Qwen CLI config -> ~/.qwen/settings.json"
@@ -74,8 +77,10 @@ cat <<EOF
 
 Done. Next:
 
-  qwen38-serve                     # first run downloads ~16 GB, then loads for ~1 min
-  qwen --model Qwen3.8-27B-4bit    # in another shell
+  cd ~/your-project && qw     # first run downloads ~16 GB, then loads for ~1 min
+
+  qw status                   # up? holding how much? cache warm?
+  qw stop                     # free the ~23 GB
 
 Reproduce the benchmarks:  $REPO_DIR/scripts/benchmark.sh
 EOF

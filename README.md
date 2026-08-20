@@ -9,9 +9,33 @@ and pointing the **Qwen Code** agent CLI at it. No cloud, no API key, no telemet
 git clone https://github.com/Remenby31/qwen-code-local-mlx
 cd qwen-code-local-mlx && ./scripts/install.sh
 
-qwen38-serve                     # terminal 1
-qwen --model Qwen3.8-27B-4bit    # terminal 2
+cd ~/your-project && qw          # that's it
 ```
+
+`qw` starts the model server if it isn't already running, waits for it, then hands you
+the Qwen Code CLI. One terminal, no daemon to babysit.
+
+| | |
+|---|---|
+| `qw [args…]` | run the CLI here, starting the server if needed |
+| `qw status` | up? holding how much? is the cache warm? |
+| `qw stop` | free the ~23 GB when you need it back |
+| `qw restart`, `qw logs` | the obvious things |
+
+```console
+$ qw status
+server   : up on :8080 (pid 94183), holding 23 GB
+model    : Qwen3.8-27B-4bit
+mode     : dflash  (drafter: incoai/Qwen3.8-27B-DFlash2)
+cache    : on, warm — 5 hits, 95,779 tokens reused
+accept   : 2.72 tokens/round over 6 requests
+```
+
+**There is deliberately no idle auto-stop.** The prefix cache lives in RAM and dies with
+the server (its SSD spill is an overflow valve, not persistence), so a stop/start cycle
+costs a minute of loading *plus* a cold first turn — roughly three minutes of real time.
+A timer that reclaims memory you weren't short of is a bad trade. Stopping is a decision
+you make.
 
 ---
 
