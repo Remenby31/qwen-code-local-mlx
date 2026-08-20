@@ -104,3 +104,42 @@ absolute* throughput:
 | 4-bit (this repo) | 15.1 tok/s | **40.6 tok/s** | 2.69× |
 
 Compare absolute numbers. The smaller multiple is the faster machine.
+
+## 9. "Local" does not mean "offline" — the CLI phones home by default
+
+The model runs on your machine. The CLI does not stay there.
+
+Sampling `lsof` during a normal turn, with every token generated locally:
+
+```
+node → 47.88.128.3:443     (Alibaba Cloud, US)
+node → 161.117.125.37:443  (Alibaba Cloud, Singapore)
+```
+
+`privacy.usageStatisticsEnabled` defaults to **true**, and there is an OTLP telemetry
+stack alongside it. Qwen's own docs say they collect no PII, no prompt or response
+content, and no file content — but if you built this setup so your code never leaves the
+machine, "nothing is emitted" and "a privacy policy says the emissions are harmless" are
+different guarantees.
+
+Turning both off makes the CLI go silent — same task, re-audited, zero non-loopback
+connections:
+
+```json
+{
+  "privacy":   { "usageStatisticsEnabled": false },
+  "telemetry": { "enabled": false, "logPrompts": false }
+}
+```
+
+`qw` also exports `QWEN_USAGE_STATISTICS_ENABLED=false` and `QWEN_TELEMETRY_ENABLED=false`
+before launching the CLI. Those env vars override `settings.json`, so the guarantee
+survives a reset or a machine where you forgot to write the config.
+
+The weights need no network either: the server starts and serves fine under
+`HF_HUB_OFFLINE=1`, reading everything from `~/.cache/huggingface`. Worth knowing, because
+`snapshot_download` normally contacts the hub to check revisions even when fully cached.
+
+**Caveat on the method:** `lsof` sampled every 0.5 s can miss a very short-lived
+connection. It is strong evidence, not a packet-level proof. Pull the network cable if you
+need certainty.

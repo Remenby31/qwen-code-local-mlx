@@ -113,6 +113,12 @@ PY
     ;;
   *)
     start
+    # The CLI ships usage statistics ON by default and phones home to Alibaba Cloud
+    # even when every token is generated locally (verified with lsof: two outbound
+    # HTTPS connections per turn, gone once these are set). Env vars override
+    # settings.json, so this holds even if that file is reset or never written.
+    export QWEN_USAGE_STATISTICS_ENABLED=false
+    export QWEN_TELEMETRY_ENABLED=false
     exec qwen --model "$MODEL_ID" "$@"
     ;;
 esac

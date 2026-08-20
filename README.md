@@ -135,6 +135,15 @@ Tool calling works, which is what makes the agent CLI usable at all:
 curl -s localhost:8080/metrics | python3 -m json.tool   # accept length, cache hits, throughput
 ```
 
+## Offline and private
+
+The model never leaves your machine, and neither does anything else once configured. The
+server runs fine under `HF_HUB_OFFLINE=1` (weights come from the local cache), and `qw`
+disables the CLI's usage statistics and telemetry, which ship **enabled** and otherwise
+open outbound connections to Alibaba Cloud on every turn — verified with `lsof`, before
+and after. Details and the audit in
+[pitfalls #9](docs/pitfalls.md#9-local-does-not-mean-offline--the-cli-phones-home-by-default).
+
 ## Read these before tuning
 
 - **[docs/pitfalls.md](docs/pitfalls.md)** — eight traps, all hit and measured while building
